@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Theodolite — Device Diagnostic</title>
+<style>
+  :root {
+    --bg:#0a0908; --soft:#141210; --line:#2a2620;
+    --amber:#ffb547; --amber-dim:#8a5a1a;
+    --red:#ff5a3c; --green:#6fff8e; --text:#efe2c5; --dim:#8a7d63;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    background:var(--bg);color:var(--text);font-size:13px;
+    padding:18px 14px calc(30px + env(safe-area-inset-bottom));
+    padding-top:calc(18px + env(safe-area-inset-top));
+    -webkit-font-smoothing:antialiased;line-height:1.5;
+  }
+  h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;
+     color:var(--amber);font-weight:600;}
+  .sub{color:var(--dim);font-size:10px;letter-spacing:.1em;
+       text-transform:uppercase;margin:4px 0 16px;}
+  .card{border:1px solid var(--line);background:var(--soft);
+        margin-bottom:10px;}
+  .card h2{font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+           color:var(--dim);padding:9px 12px;border-bottom:1px solid var(--line);
+           display:flex;justify-content:space-between;align-items:center;}
+  .badge{font-size:9px;padding:2px 7px;letter-spacing:.1em;border:1px solid;}
+  .badge.ok{color:var(--green);border-color:rgba(111,255,142,.4);}
+  .badge.bad{color:var(--red);border-color:rgba(255,90,60,.4);}
+  .badge.wait{color:var(--amber);border-color:var(--amber-dim);}
+  .row{display:flex;justify-content:space-between;gap:10px;
+       padding:6px 12px;border-bottom:1px solid rgba(42,38,32,.5);}
+  .row:last-child{border-bottom:none;}
+  .row .k{color:var(--dim);font-size:11px;}
+  .row .v{text-align:right;font-size:11px;word-break:break-word;}
+  .v.ok{color:var(--green);} .v.bad{color:var(--red);} .v.warn{color:var(--amber);}
+  button{
+    width:100%;background:var(--amber);color:#000;border:none;
+    padding:14px;font-family:inherit;font-weight:600;font-size:12px;
+    letter-spacing:.16em;text-transform:uppercase;cursor:pointer;
+    margin:6px 0;
+  }
+  button.sec{background:transparent;color:var(--amber);
+             border:1px solid var(--amber-dim);}
+  button:disabled{opacity:.4;}
+  .live{font-size:22px;color:var(--amber);text-align:center;
+        padding:10px 0;letter-spacing:.04em;}
+  .live small{font-size:10px;color:var(--dim);}
+  #cam{width:100%;border:1px solid var(--line);background:#000;
+       display:none;margin-top:8px;}
+  .hint{font-size:10px;color:var(--dim);padding:8px 12px;line-height:1.6;}
+  .verdict{border:1px solid var(--amber-dim);background:rgba(255,181,71,.05);
+           padding:12px;margin-top:14px;font-size:11px;line-height:1.65;
+           display:none;}
+  .verdict h3{color:var(--amber);font-size:11px;letter-spacing:.12em;
+              text-transform:uppercase;margin-bottom:6px;}
+  .verdict ul{margin:6px 0 0 16px;}
+  .verdict li{margin-bottom:4px;}
+  code{color:var(--amber);background:rgba(255,181,71,.08);padding:0 3px;}
+  #log{font-size:9.5px;color:var(--dim);background:#000;border:1px solid var(--line);
+       padding:8px;margin-top:10px;max-height:160px;overflow-y:auto;
+       white-space:pre-wrap;word-break:break-word;line-height:1.5;}
+</style>
+</head>
+<body>
+
+<h1>Device Diagnostic</h1>
+<div class="sub">Theodolite Panorama · sensor &amp; camera check</div>
+
+<!-- ENVIRONMENT -->
+<div class="card">
+  <h2>Environment</h2>
+  <div class="row"><span class="k">Secure context (HTTPS)</span><span class="v" id="e-https">—</span></div>
+  <div class="row"><span class="k">User agent</span><span class="v" id="e-ua" style="font-size:9px;">—</span></div>
+  <div class="row"><span class="k">Screen</span><span class="v" id="e-screen">—</span></div>
+  <div class="row"><span class="k">Device pixel ratio</span><span class="v" id="e-dpr">—</span></div>
+  <div class="row"><span class="k">Service worker API</span><span class="v" id="e-sw">—</span></div>
+</div>
+
+<!-- MOTION -->
+<div class="card">
+  <h2>Motion / Orientation <span class="badge wait" id="m-badge">untested</span></h2>
+  <div class="row"><span class="k">DeviceOrientationEvent</span><span class="v" id="m-doe">—</span></div>
+  <div class="row"><span class="k">Needs permission (iOS-style)</span><span class="v" id="m-perm">—</span></div>
+  <div class="row"><span class="k"><code>deviceorientation</code> fires</span><span class="v" id="m-rel">—</span></div>
+  <div class="row"><span class="k"><code>deviceorientationabsolute</code> fires</span><span class="v" id="m-abs">—</span></div>
+  <div class="row"><span class="k">webkitCompassHeading</span><span class="v" id="m-compass">—</span></div>
+  <div class="row"><span class="k">alpha / beta / gamma present</span><span class="v" id="m-abg">—</span></div>
+  <div class="row"><span class="k">absolute flag</span><span class="v" id="m-absflag">—</span></div>
+  <div class="row"><span class="k">event rate</span><span class="v" id="m-hz">—</span></div>
+  <div class="live" id="m-live">α — · β — · γ —<br><small>tap test, then move the phone</small></div>
+  <button id="m-test">Test motion sensors</button>
+</div>
+
+<!-- SENSOR STABILITY -->
+<div class="card">
+  <h2>Sensor Stability <span class="badge wait" id="s-badge">untested</span></h2>
+  <div class="hint">
+    Tests whether your overlay-spring problem is sensor noise, magnetic
+    interference, or gimbal-lock math. <b>Hold the phone vertical and
+    still</b> (as if aiming a panorama) for the whole test — don't move it.
+  </div>
+  <div class="live" id="s-live">— hold still —<br><small>raw vs look-vector</small></div>
+  <div class="row"><span class="k">Raw alpha jitter (still)</span><span class="v" id="s-rawjit">—</span></div>
+  <div class="row"><span class="k">Look-vector azimuth jitter</span><span class="v" id="s-azjit">—</span></div>
+  <div class="row"><span class="k">Elevation jitter</span><span class="v" id="s-eljit">—</span></div>
+  <div class="row"><span class="k">Azimuth drift over test</span><span class="v" id="s-drift">—</span></div>
+  <div class="row"><span class="k">Max raw-alpha jump</span><span class="v" id="s-jump">—</span></div>
+  <div class="row"><span class="k">Gimbal-lock spring detected</span><span class="v" id="s-gimbal">—</span></div>
+  <button id="s-test">Run 7-second stability test</button>
+</div>
+
+<!-- COMPASS vs GYRO -->
+<div class="card">
+  <h2>Compass vs Gyro <span class="badge wait" id="g-badge">untested</span></h2>
+  <div class="hint">
+    Compares the two orientation event streams. If they disagree badly
+    while the phone is still, your magnetometer (compass) is being
+    disturbed — use <b>Gyro</b> mode in the app. Keep the phone still.
+  </div>
+  <div class="row"><span class="k">Relative (gyro) azimuth</span><span class="v" id="g-rel">—</span></div>
+  <div class="row"><span class="k">Absolute (compass) azimuth</span><span class="v" id="g-abs">—</span></div>
+  <div class="row"><span class="k">Divergence</span><span class="v" id="g-div">—</span></div>
+  <div class="row"><span class="k">Compass noise</span><span class="v" id="g-noise">—</span></div>
+  <div class="row"><span class="k">Recommended source</span><span class="v" id="g-rec">—</span></div>
+  <button id="g-test">Run 6-second comparison</button>
+</div>
+
+<!-- CAMERA -->
+<div class="card">
+  <h2>Camera <span class="badge wait" id="c-badge">untested</span></h2>
+  <div class="row"><span class="k">mediaDevices API</span><span class="v" id="c-api">—</span></div>
+  <div class="row"><span class="k">Rear camera (environment)</span><span class="v" id="c-env">—</span></div>
+  <div class="row"><span class="k">Resolution obtained</span><span class="v" id="c-res">—</span></div>
+  <div class="row"><span class="k">Cameras found</span><span class="v" id="c-count">—</span></div>
+  <video id="cam" autoplay playsinline muted></video>
+  <div id="c-cameras"></div>
+  <button id="c-test">Test camera &amp; list lenses</button>
+</div>
+
+<!-- PROJECTION CONSISTENCY -->
+<div class="card">
+  <h2>Guide ↔ Projection <span class="badge wait" id="p-badge">untested</span></h2>
+  <div class="hint">
+    Verifies the live capture guide and the composite assembly use
+    identical maths — i.e. that a frame lands in the panorama exactly
+    where the on-screen reticle promised. This is a pure-maths check;
+    it needs no sensors or camera.
+  </div>
+  <div class="row"><span class="k">Basis round-trip error</span><span class="v" id="p-basis">—</span></div>
+  <div class="row"><span class="k">Guide vs composite mapping</span><span class="v" id="p-map">—</span></div>
+  <div class="row"><span class="k">Roll-handling agreement</span><span class="v" id="p-roll">—</span></div>
+  <div class="row"><span class="k">Crop geometry (this screen)</span><span class="v" id="p-crop">—</span></div>
+  <button id="p-test">Run consistency check</button>
+</div>
+
+<button class="sec" id="run-all">Run everything &amp; diagnose</button>
+
+<div class="verdict" id="verdict"></div>
+
+<div id="log">diagnostic log —</div>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+function log(m){
+  const el = $('log');
+  el.textContent += '\n' + m;
+  el.scrollTop = el.scrollHeight;
+}
+function set(id, txt, cls){
+  const el = $(id);
+  if(!el) return;
+  el.textContent = txt;
+  el.className = 'v' + (cls ? ' ' + cls : '');
+}
+
+// ---- ENVIRONMENT ----
+(function env(){
+  const https = window.isSecureContext;
+  set('e-https', https ? 'yes' : 'NO — sensors blocked', https ? 'ok' : 'bad');
+  set('e-ua', navigator.userAgent);
+  set('e-screen', window.innerWidth + ' × ' + window.innerHeight + ' css');
+  set('e-dpr', String(window.devicePixelRatio || 1));
+  set('e-sw', 'serviceWorker' in navigator ? 'available' : 'missing', 'serviceWorker' in navigator ? 'ok':'warn');
+  log('env: https=' + https + ' screen=' + window.innerWidth + 'x' + window.innerHeight);
+})();
+
+// ---- MOTION ----
+const motion = {
+  doe:false, needsPerm:false, relFired:false, absFired:false,
+  compass:false, abg:false, absFlag:null, lastEvent:0,
+};
+(function motionStatic(){
+  const has = typeof DeviceOrientationEvent !== 'undefined';
+  motion.doe = has;
+  set('m-doe', has ? 'defined' : 'NOT defined', has ? 'ok' : 'bad');
+  const needsPerm = has && typeof DeviceOrientationEvent.requestPermission === 'function';
+  motion.needsPerm = needsPerm;
+  set('m-perm', needsPerm ? 'yes (iOS 13+ style)' : 'no (Android/desktop)', 'ok');
+  log('motion: DOE=' + has + ' needsPermission=' + needsPerm);
+})();
+
+function handleRel(e){ onMotionEvent(e, false); }
+function handleAbs(e){ onMotionEvent(e, true); }
+
+function onMotionEvent(e, isAbsListener){
+  motion.lastEvent = Date.now();
+  motion.eventCount = (motion.eventCount || 0) + 1;
+  if(isAbsListener) {
+    if(!motion.absFired){ motion.absFired = true;
+      set('m-abs','firing ✓','ok'); log('deviceorientationabsolute: first event'); }
+  } else {
+    if(!motion.relFired){ motion.relFired = true;
+      set('m-rel','firing ✓','ok'); log('deviceorientation: first event'); }
+  }
+  const a = e.alpha, b = e.beta, g = e.gamma;
+  const hasABG = a != null && b != null && g != null;
+  if(hasABG && !motion.abg){
+    motion.abg = true;
+    set('m-abg','yes ✓','ok');
+  }
+  if(e.webkitCompassHeading != null && !motion.compass){
+    motion.compass = true;
+    set('m-compass', e.webkitCompassHeading.toFixed(1) + '° ✓','ok');
+  }
+  if(motion.absFlag === null && typeof e.absolute === 'boolean'){
+    motion.absFlag = e.absolute;
+    set('m-absflag', String(e.absolute), e.absolute ? 'ok':'warn');
+  }
+  $('m-live').innerHTML =
+    'α ' + (a==null?'—':a.toFixed(1)) +
+    ' · β ' + (b==null?'—':b.toFixed(1)) +
+    ' · γ ' + (g==null?'—':g.toFixed(1)) +
+    '<br><small>' + (hasABG ? 'sensors live — move the phone' : 'waiting for values…') + '</small>';
+}
+
+async function testMotion(){
+  $('m-test').disabled = true;
+  $('m-badge').textContent = 'testing'; $('m-badge').className = 'badge wait';
+  log('motion: starting test');
+
+  if(motion.needsPerm){
+    try {
+      const r = await DeviceOrientationEvent.requestPermission();
+      log('motion: requestPermission -> ' + r);
+      if(r !== 'granted'){
+        set('m-rel','permission denied','bad');
+        $('m-badge').textContent = 'denied'; $('m-badge').className='badge bad';
+        $('m-test').disabled = false;
+        return;
+      }
+    } catch(err){
+      log('motion: requestPermission error -> ' + err.message);
+    }
+  }
+
+  window.addEventListener('deviceorientation', handleRel, true);
+  window.addEventListener('deviceorientationabsolute', handleAbs, true);
+  log('motion: listeners attached, waiting 4s for events…');
+
+  // mark not-fired defaults
+  set('m-rel','listening…','warn');
+  set('m-abs','listening…','warn');
+  motion.eventCount = 0;
+  const t0 = Date.now();
+
+  setTimeout(() => {
+    if(!motion.relFired) set('m-rel','NO events','bad');
+    if(!motion.absFired) set('m-abs','NO events','bad');
+    if(!motion.abg && !motion.relFired && !motion.absFired)
+      set('m-abg','no data','bad');
+
+    const secs = (Date.now() - t0) / 1000;
+    const hz = motion.eventCount / secs;
+    if(motion.eventCount > 0){
+      const cls = hz >= 30 ? 'ok' : (hz >= 15 ? 'warn' : 'bad');
+      set('m-hz', hz.toFixed(0) + ' Hz' + (hz < 30 ? ' (low)' : ''), cls);
+      log('motion: ~' + hz.toFixed(1) + ' Hz across both streams');
+    } else {
+      set('m-hz', 'no events', 'bad');
+    }
+
+    const working = motion.relFired || motion.absFired;
+    $('m-badge').textContent = working ? 'working' : 'FAILED';
+    $('m-badge').className = 'badge ' + (working ? 'ok' : 'bad');
+    log('motion: test done. rel=' + motion.relFired +
+        ' abs=' + motion.absFired + ' abg=' + motion.abg +
+        ' absFlag=' + motion.absFlag);
+    $('m-test').disabled = false;
+  }, 4200);
+}
+$('m-test').addEventListener('click', testMotion);
+
+// ============================================================
+// SHARED: Euler -> look-vector azimuth/elevation
+// (same math the main app now uses)
+// ============================================================
+const DEG = Math.PI / 180;
+function eulerToLook(alphaDeg, betaDeg, gammaDeg){
+  const a = alphaDeg*DEG, b = betaDeg*DEG, g = gammaDeg*DEG;
+  const cA=Math.cos(a),sA=Math.sin(a),cB=Math.cos(b),sB=Math.sin(b),cG=Math.cos(g),sG=Math.sin(g);
+  const lookE = -(cA*sG + sA*sB*cG);
+  const lookN = -(sA*sG - cA*sB*cG);
+  const lookU = -(cB*cG);
+  let az = Math.atan2(lookE, lookN)/DEG; az = ((az%360)+360)%360;
+  const el = Math.asin(Math.max(-1,Math.min(1,lookU)))/DEG;
+  return { az, el };
+}
+// circular stats helpers
+function angDiff(a, b){ return ((a-b+540)%360)-180; }
+function circStdDev(samples){
+  // standard deviation of angles, handling wrap
+  if(samples.length < 2) return 0;
+  let sx=0, sy=0;
+  for(const s of samples){ sx+=Math.cos(s*DEG); sy+=Math.sin(s*DEG); }
+  sx/=samples.length; sy/=samples.length;
+  const R = Math.hypot(sx, sy);
+  // circular std dev in degrees
+  return Math.sqrt(-2*Math.log(Math.max(1e-9,R)))/DEG;
+}
+
+// ============================================================
+// SENSOR STABILITY TEST
+// ============================================================
+async function testStability(){
+  const btn = $('s-test');
+  btn.disabled = true;
+  $('s-badge').textContent = 'testing'; $('s-badge').className='badge wait';
+
+  if(motion.needsPerm){
+    try { await DeviceOrientationEvent.requestPermission(); } catch(e){}
+  }
+
+  const rawAlpha = [], azs = [], els = [];
+  let lastRaw = null, maxJump = 0, maxAzJump = 0;
+  let started = Date.now();
+
+  function collect(e){
+    if(e.alpha == null || e.beta == null || e.gamma == null) return;
+    rawAlpha.push(e.alpha);
+    const lk = eulerToLook(e.alpha, e.beta, e.gamma);
+    azs.push(lk.az);
+    els.push(lk.el);
+    if(lastRaw != null){
+      const j = Math.abs(angDiff(e.alpha, lastRaw));
+      if(j > maxJump) maxJump = j;
+      if(azs.length > 1){
+        const aj = Math.abs(angDiff(azs[azs.length-1], azs[azs.length-2]));
+        if(aj > maxAzJump) maxAzJump = aj;
+      }
+    }
+    lastRaw = e.alpha;
+    const secsLeft = Math.max(0, 7 - (Date.now()-started)/1000);
+    $('s-live').innerHTML =
+      'raw α ' + e.alpha.toFixed(1) + ' · look az ' + lk.az.toFixed(1) +
+      '<br><small>hold still — ' + secsLeft.toFixed(0) + 's left</small>';
+  }
+
+  // Prefer absolute event if available (worst case for jitter), else relative
+  window.addEventListener('deviceorientationabsolute', collect, true);
+  window.addEventListener('deviceorientation', collect, true);
+  log('stability: collecting for 7s — hold still');
+
+  await new Promise(r => setTimeout(r, 7000));
+  window.removeEventListener('deviceorientationabsolute', collect, true);
+  window.removeEventListener('deviceorientation', collect, true);
+
+  if(rawAlpha.length < 5){
+    set('s-rawjit','no data','bad');
+    $('s-badge').textContent='FAILED'; $('s-badge').className='badge bad';
+    $('s-live').innerHTML = '— no sensor data —';
+    btn.disabled = false;
+    return;
+  }
+
+  const rawJit = circStdDev(rawAlpha);
+  const azJit = circStdDev(azs);
+  const elMean = els.reduce((a,b)=>a+b,0)/els.length;
+  const elJit = Math.sqrt(els.reduce((s,v)=>s+(v-elMean)*(v-elMean),0)/els.length);
+  const drift = Math.abs(angDiff(azs[azs.length-1], azs[0]));
+
+  const jc = v => v < 0.5 ? 'ok' : (v < 2 ? 'warn' : 'bad');
+  set('s-rawjit', rawJit.toFixed(2) + '°', jc(rawJit));
+  set('s-azjit',  azJit.toFixed(2) + '°', jc(azJit));
+  set('s-eljit',  elJit.toFixed(2) + '°', jc(elJit));
+  set('s-drift',  drift.toFixed(1) + '° over 7s',
+                  drift < 2 ? 'ok' : (drift < 8 ? 'warn' : 'bad'));
+  set('s-jump',   maxJump.toFixed(1) + '°',
+                  maxJump < 3 ? 'ok' : (maxJump < 15 ? 'warn' : 'bad'));
+
+  // Gimbal-lock signature: raw alpha jitter/jumps large WHILE look-vector
+  // azimuth stays calm => the old math would spring, the new math won't.
+  const gimbal = (rawJit > 3 || maxJump > 15) && azJit < 2.5;
+  if(gimbal){
+    set('s-gimbal','YES — old math would spring','bad');
+  } else if(rawJit > 3 || maxJump > 15){
+    set('s-gimbal','raw noisy, look-vec also noisy','warn');
+  } else {
+    set('s-gimbal','no','ok');
+  }
+
+  stab.rawJit = rawJit; stab.azJit = azJit; stab.elJit = elJit;
+  stab.drift = drift; stab.maxJump = maxJump; stab.gimbal = gimbal;
+  stab.done = true;
+
+  log('stability: rawAlphaJitter=' + rawJit.toFixed(2) +
+      ' lookAzJitter=' + azJit.toFixed(2) +
+      ' elJitter=' + elJit.toFixed(2) +
+      ' drift=' + drift.toFixed(1) +
+      ' maxJump=' + maxJump.toFixed(1) +
+      ' gimbal=' + gimbal);
+
+  const ok = azJit < 2 && elJit < 2;
+  $('s-badge').textContent = ok ? 'stable' : 'noisy';
+  $('s-badge').className = 'badge ' + (ok ? 'ok' : 'warn');
+  $('s-live').innerHTML = 'done — look-vector azimuth jitter ' +
+    azJit.toFixed(2) + '°<br><small>' +
+    (ok ? 'good enough for capture' : 'noisier than ideal') + '</small>';
+  btn.disabled = false;
+}
+const stab = { done:false };
+$('s-test').addEventListener('click', testStability);
+
+// ============================================================
+// COMPASS vs GYRO COMPARISON
+// ============================================================
+async function testCompassGyro(){
+  const btn = $('g-test');
+  btn.disabled = true;
+  $('g-badge').textContent = 'testing'; $('g-badge').className='badge wait';
+
+  if(motion.needsPerm){
+    try { await DeviceOrientationEvent.requestPermission(); } catch(e){}
+  }
+
+  let relAz = null, absAz = null;
+  const relSamples = [], absSamples = [];
+
+  function onRel(e){
+    if(e.alpha==null||e.beta==null||e.gamma==null) return;
+    relAz = eulerToLook(e.alpha,e.beta,e.gamma).az;
+    relSamples.push(relAz);
+  }
+  function onAbs(e){
+    if(e.alpha==null||e.beta==null||e.gamma==null) return;
+    absAz = eulerToLook(e.alpha,e.beta,e.gamma).az;
+    absSamples.push(absAz);
+  }
+  window.addEventListener('deviceorientation', onRel, true);
+  window.addEventListener('deviceorientationabsolute', onAbs, true);
+  log('compass/gyro: comparing for 6s');
+
+  await new Promise(r => setTimeout(r, 6000));
+  window.removeEventListener('deviceorientation', onRel, true);
+  window.removeEventListener('deviceorientationabsolute', onAbs, true);
+
+  const haveRel = relSamples.length >= 3;
+  const haveAbs = absSamples.length >= 3;
+
+  set('g-rel', haveRel ? relAz.toFixed(1)+'°' : 'no stream', haveRel?'ok':'bad');
+  set('g-abs', haveAbs ? absAz.toFixed(1)+'°' : 'no stream', haveAbs?'ok':'warn');
+
+  let rec = 'Gyro';
+  if(haveRel && haveAbs){
+    const div = Math.abs(angDiff(relAz, absAz));
+    set('g-div', div.toFixed(1)+'°', div < 5 ? 'ok' : (div < 20 ? 'warn':'bad'));
+    const absNoise = circStdDev(absSamples);
+    set('g-noise', absNoise.toFixed(2)+'° (still)',
+        absNoise < 1 ? 'ok' : (absNoise < 4 ? 'warn':'bad'));
+    if(absNoise > 4){
+      rec = 'Gyro — compass too noisy';
+    } else if(absNoise < 1.5 && div < 10){
+      rec = 'Either works — Compass OK';
+    } else {
+      rec = 'Gyro (smoother)';
+    }
+    log('compass/gyro: divergence=' + div.toFixed(1) +
+        ' absNoise=' + absNoise.toFixed(2));
+  } else if(haveRel){
+    set('g-div','—'); set('g-noise','no compass stream','warn');
+    rec = 'Gyro (only stream available)';
+  } else if(haveAbs){
+    set('g-div','—');
+    const absNoise = circStdDev(absSamples);
+    set('g-noise', absNoise.toFixed(2)+'°', absNoise<4?'ok':'bad');
+    rec = absNoise < 4 ? 'Compass' : 'Compass is noisy — try anyway';
+  } else {
+    set('g-div','no data','bad'); set('g-noise','no data','bad');
+    rec = 'No orientation events at all';
+  }
+  set('g-rec', rec, 'warn');
+  cg.rec = rec; cg.done = true;
+
+  $('g-badge').textContent = 'done'; $('g-badge').className='badge ok';
+  btn.disabled = false;
+}
+const cg = { done:false };
+$('g-test').addEventListener('click', testCompassGyro);
+
+// ============================================================
+// GUIDE ↔ PROJECTION CONSISTENCY TEST
+// ============================================================
+// Re-implements the app's projection primitives and asserts the live
+// guide and the composite assembly agree. Pure maths — no hardware.
+function pc_cameraBasis(azDeg, elDeg, rollDeg){
+  const az=azDeg*DEG, el=elDeg*DEG, rl=rollDeg*DEG;
+  const ca=Math.cos(az),sa=Math.sin(az),ce=Math.cos(el),se=Math.sin(el);
+  const fwd=[sa*ce,se,ca*ce];
+  const right0=[ca,0,-sa];
+  const up0=[fwd[1]*right0[2]-fwd[2]*right0[1],
+             fwd[2]*right0[0]-fwd[0]*right0[2],
+             fwd[0]*right0[1]-fwd[1]*right0[0]];
+  const cr=Math.cos(rl),sr=Math.sin(rl);
+  const right=[cr*right0[0]+sr*up0[0],cr*right0[1]+sr*up0[1],cr*right0[2]+sr*up0[2]];
+  const up=[-sr*right0[0]+cr*up0[0],-sr*right0[1]+cr*up0[1],-sr*right0[2]+cr*up0[2]];
+  return {right,up,fwd};
+}
+function pc_worldVec(azDeg,elDeg){
+  return [Math.sin(azDeg*DEG)*Math.cos(elDeg*DEG),
+          Math.sin(elDeg*DEG),
+          Math.cos(azDeg*DEG)*Math.cos(elDeg*DEG)];
+}
+function pc_cam(w,B){
+  return [w[0]*B.right[0]+w[1]*B.right[1]+w[2]*B.right[2],
+          w[0]*B.up[0]+w[1]*B.up[1]+w[2]*B.up[2],
+          w[0]*B.fwd[0]+w[1]*B.fwd[1]+w[2]*B.fwd[2]];
+}
+
+function testProjection(){
+  const btn=$('p-test');
+  btn.disabled=true;
+  $('p-badge').textContent='testing'; $('p-badge').className='badge wait';
+  log('projection: running consistency check');
+
+  let maxMap=0, maxRoll=0;
+  // sweep camera poses and targets
+  for(let ci=0;ci<40;ci++){
+    const camAz=Math.random()*360;
+    const camEl=Math.random()*120-60;
+    const camRoll=Math.random()*30-15;
+    const fovH=30+Math.random()*40, fovV=60+Math.random()*40;
+    const w=1080, h=2086;
+    const B=pc_cameraBasis(camAz,camEl,camRoll);
+    for(let ti=0;ti<6;ti++){
+      const tAz=camAz+(Math.random()*30-15);
+      const tEl=camEl+(Math.random()*30-15);
+      const wv=pc_worldVec(tAz,tEl);
+      const c=pc_cam(wv,B);
+      if(c[2]<=0.05) continue;
+      const tanH2=Math.tan(fovH*DEG/2),tanV2=Math.tan(fovV*DEG/2);
+      const px=c[0]/c[2],py=c[1]/c[2];
+      // GUIDE: pixel position as fraction of frame
+      const gFracX=(0.5+(px/tanH2)*0.5);
+      const gFracY=(0.5-(py/tanV2)*0.5);
+      // COMPOSITE: source sample fraction
+      const u01=(px/tanH2+1)*0.5;
+      const v01=(1-py/tanV2)*0.5;
+      const dMap=Math.max(Math.abs(gFracX-u01),Math.abs(gFracY-v01));
+      if(dMap>maxMap) maxMap=dMap;
+    }
+    // roll handling: basis must be orthonormal
+    const dotRU=B.right[0]*B.up[0]+B.right[1]*B.up[1]+B.right[2]*B.up[2];
+    const lenR=Math.hypot(...B.right);
+    const ortho=Math.max(Math.abs(dotRU),Math.abs(lenR-1));
+    if(ortho>maxRoll) maxRoll=ortho;
+  }
+
+  // basis round-trip: extract from a matrix, rebuild, compare
+  let maxBasis=0;
+  for(let i=0;i<200;i++){
+    const az=Math.random()*360,el=Math.random()*150-75,rl=Math.random()*60-30;
+    const B1=pc_cameraBasis(az,el,rl);
+    // reconstruct az/el/roll from B1.fwd & B1.up the way eulerToLook would
+    const fwd=B1.fwd;
+    let az2=Math.atan2(fwd[0],fwd[2])/DEG; az2=((az2%360)+360)%360;
+    const el2=Math.asin(Math.max(-1,Math.min(1,fwd[1])))/DEG;
+    const B2=pc_cameraBasis(az2,el2,rl);
+    for(let k=0;k<3;k++){
+      maxBasis=Math.max(maxBasis,Math.abs(B1.fwd[k]-B2.fwd[k]));
+    }
+  }
+
+  const mapOk=maxMap<1e-9, basisOk=maxBasis<1e-9, rollOk=maxRoll<1e-9;
+  set('p-basis', maxBasis.toExponential(1), basisOk?'ok':'bad');
+  set('p-map',   maxMap.toExponential(1) + (mapOk?' — identical':' — MISMATCH'),
+      mapOk?'ok':'bad');
+  set('p-roll',  maxRoll.toExponential(1), rollOk?'ok':'bad');
+
+  // crop geometry sanity for THIS screen
+  const sw=window.innerWidth, sh=window.innerHeight;
+  const portrait=sh>=sw;
+  set('p-crop', sw+'×'+sh+' '+(portrait?'portrait ✓':'LANDSCAPE — rotate'),
+      portrait?'ok':'warn');
+
+  const allOk=mapOk&&basisOk&&rollOk;
+  $('p-badge').textContent=allOk?'consistent':'MISMATCH';
+  $('p-badge').className='badge '+(allOk?'ok':'bad');
+  proj.done=true; proj.ok=allOk; proj.portrait=portrait;
+  log('projection: map='+maxMap.toExponential(2)+
+      ' basis='+maxBasis.toExponential(2)+
+      ' roll='+maxRoll.toExponential(2)+' -> '+(allOk?'OK':'FAIL'));
+  btn.disabled=false;
+}
+const proj={done:false};
+$('p-test').addEventListener('click', testProjection);
+
+// ---- CAMERA ----
+const cam = { api:false, env:false, res:'', count:0 };
+(function camStatic(){
+  const has = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  cam.api = has;
+  set('c-api', has ? 'available' : 'NOT available', has ? 'ok' : 'bad');
+  log('camera: getUserMedia=' + has);
+})();
+
+async function testCamera(){
+  $('c-test').disabled = true;
+  $('c-badge').textContent = 'testing'; $('c-badge').className='badge wait';
+  if(!cam.api){
+    $('c-badge').textContent='FAILED'; $('c-badge').className='badge bad';
+    $('c-test').disabled = false;
+    return;
+  }
+  let stream;
+  try {
+    log('camera: requesting environment-facing…');
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal:'environment' },
+              width:{ ideal:1920 }, height:{ ideal:1080 } },
+      audio:false
+    });
+    cam.env = true;
+    set('c-env','granted ✓','ok');
+  } catch(err){
+    log('camera: environment failed -> ' + err.name + ': ' + err.message);
+    set('c-env', err.name, 'bad');
+    try {
+      log('camera: retrying with any camera…');
+      stream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
+      set('c-env','fallback to default cam','warn');
+    } catch(err2){
+      log('camera: all attempts failed -> ' + err2.name + ': ' + err2.message);
+      set('c-env','blocked: ' + err2.name,'bad');
+      $('c-badge').textContent='FAILED'; $('c-badge').className='badge bad';
+      $('c-test').disabled = false;
+      return;
+    }
+  }
+
+  const v = $('cam');
+  v.srcObject = stream;
+  v.style.display = 'block';
+  await v.play().catch(e => log('camera: play() -> ' + e.message));
+
+  // The camera the browser chose by default
+  await new Promise(r => setTimeout(r, 700));
+  const track = stream.getVideoTracks()[0];
+  const s = track ? track.getSettings() : {};
+  cam.res = (v.videoWidth||s.width||'?') + ' × ' + (v.videoHeight||s.height||'?');
+  cam.defaultFacing = s.facingMode || '?';
+  cam.defaultId = s.deviceId || '';
+  set('c-res', cam.res + (s.facingMode ? ' (' + s.facingMode + ')' : ''), 'ok');
+  log('camera: default lens resolution ' + cam.res + ' facing=' + cam.defaultFacing);
+  stream.getTracks().forEach(t => t.stop());
+
+  // Now enumerate every camera and probe each one individually
+  let devices = [];
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    devices = devs.filter(d => d.kind === 'videoinput');
+    cam.count = devices.length;
+    set('c-count', String(cam.count), 'ok');
+    log('camera: ' + cam.count + ' video input(s)');
+  } catch(e){ log('camera: enumerateDevices -> ' + e.message); }
+
+  const box = $('c-cameras');
+  box.innerHTML = '';
+  for (let i = 0; i < devices.length; i++) {
+    const d = devices[i];
+    const cls = classifyLens(d.label, i);
+    let resTxt = '?';
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: d.deviceId } }, audio: false
+      });
+      const t2 = st.getVideoTracks()[0];
+      const s2 = t2 ? t2.getSettings() : {};
+      resTxt = (s2.width||'?') + '×' + (s2.height||'?');
+      st.getTracks().forEach(t => t.stop());
+      log('camera[' + i + ']: ' + (d.label||'(no label)') + ' -> ' + resTxt);
+    } catch(e){
+      resTxt = 'probe failed';
+      log('camera[' + i + ']: probe failed -> ' + e.name);
+    }
+    const isDefault = d.deviceId && d.deviceId === cam.defaultId;
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML =
+      '<span class="k">' + cls.name + (isDefault ? ' ◀ default' : '') + '</span>' +
+      '<span class="v ' + (cls.kind==='ultrawide'?'warn':'ok') + '">' +
+        resTxt + ' · ~' + cls.fov + '°</span>';
+    box.appendChild(row);
+  }
+
+  $('c-badge').textContent = 'working';
+  $('c-badge').className = 'badge ok';
+  $('c-test').disabled = false;
+}
+
+// Guess lens type + FOV from a device label
+function classifyLens(label, index){
+  const l = (label || '').toLowerCase();
+  if (l.includes('front') || l.includes('user'))
+    return { kind:'front', name:'Front camera', fov:70 };
+  if (l.includes('ultra') || l.includes('0.5'))
+    return { kind:'ultrawide', name:'Ultrawide lens', fov:106 };
+  if (l.includes('tele') || l.includes('zoom') || l.includes('3x') || l.includes('2x'))
+    return { kind:'tele', name:'Telephoto lens', fov:55 };
+  if (l.includes('wide') || l.includes('main') || l.includes('back') || l.includes('rear'))
+    return { kind:'main', name:'Main camera', fov:78 };
+  return { kind:'unknown', name:'Camera ' + (index+1) + (label ? ' ('+label.slice(0,24)+')' : ''), fov:78 };
+}
+$('c-test').addEventListener('click', testCamera);
+
+// ---- RUN ALL + VERDICT ----
+$('run-all').addEventListener('click', async () => {
+  $('run-all').disabled = true;
+  $('run-all').textContent = 'Testing camera…';
+  await testCamera();
+  $('run-all').textContent = 'Testing motion…';
+  await testMotion();
+  await new Promise(r => setTimeout(r, 4400));
+  $('run-all').textContent = 'Hold still — stability test…';
+  await testStability();
+  $('run-all').textContent = 'Hold still — compass test…';
+  await testCompassGyro();
+  $('run-all').textContent = 'Checking projection…';
+  testProjection();
+  await new Promise(r => setTimeout(r, 200));
+  $('run-all').textContent = 'Run everything & diagnose';
+  showVerdict();
+});
+
+function showVerdict(){
+  const v = $('verdict');
+  const problems = [];
+  const notes = [];
+
+  if(!window.isSecureContext)
+    problems.push('Page is not on HTTPS — Android Chrome blocks motion sensors and camera entirely off non-secure origins. Host it on HTTPS.');
+
+  if(!motion.relFired && !motion.absFired)
+    problems.push('No orientation events fired at all. On the Xperia, check Chrome → site settings → Motion sensors is allowed, and that Android Settings → Chrome → Permissions isn\'t blocking it.');
+  else if(!motion.absFired && motion.relFired)
+    notes.push('Only <code>deviceorientation</code> fires, not <code>deviceorientationabsolute</code> — normal on many Android devices. Use <b>Gyro</b> mode in the app; it sets zero with the shutter anyway.');
+  else if(motion.absFired)
+    notes.push('<code>deviceorientationabsolute</code> works — compass-referenced yaw is available if you want it.');
+
+  if((motion.relFired || motion.absFired) && !motion.abg)
+    problems.push('Events fire but alpha/beta/gamma are null — the Xperia may need "Use sensors" enabled, or it\'s a sensor-fusion issue. Try toggling Android location on (some builds gate the magnetometer behind it).');
+
+  if(motion.eventCount > 0 && motion.eventCount/4.2 < 20)
+    notes.push('Sensor event rate is low (~' + (motion.eventCount/4.2).toFixed(0) + ' Hz). Tracking will feel a little laggy but should still work.');
+
+  // --- stability findings — directly addresses the springing ---
+  if(stab.done){
+    if(stab.gimbal){
+      notes.push('<b>Gimbal-lock confirmed.</b> Your raw alpha jittered ' +
+        stab.rawJit.toFixed(1) + '° / jumped up to ' + stab.maxJump.toFixed(0) +
+        '° while the phone was still, but the look-vector azimuth stayed within ' +
+        stab.azJit.toFixed(1) + '°. That spread is exactly the "springs in contradictory directions" bug — and the new look-vector math in the updated app fixes it. Make sure you\'re on this latest build.');
+    }
+    if(stab.azJit > 2.5)
+      problems.push('Look-vector azimuth is genuinely noisy (' + stab.azJit.toFixed(1) +
+        '° jitter while still) — beyond gimbal lock, this points to a real sensor-fusion problem. Try Gyro mode, and recalibrate by waving the phone in a figure-8 a few times before capture.');
+    else if(stab.done && !stab.gimbal && stab.azJit <= 2.5)
+      notes.push('Look-vector azimuth is stable (' + stab.azJit.toFixed(1) +
+        '° jitter) — the sensors themselves are fine on this phone.');
+    if(stab.drift > 8)
+      notes.push('Azimuth drifted ' + stab.drift.toFixed(0) + '° in 7s of holding still. ' +
+        'That\'s gyro drift — fine for a quick panorama, but shoot promptly after setting 0°.');
+  } else {
+    notes.push('Run the <b>Sensor Stability</b> test (hold the phone still) to confirm whether the springing is gimbal lock or a genuine sensor fault.');
+  }
+
+  // --- compass vs gyro recommendation ---
+  if(cg.done && cg.rec)
+    notes.push('Compass-vs-gyro test recommends: <b>' + cg.rec + '</b>. Set this under the app\'s <b>Motion Tracking</b> section.');
+
+  // --- guide ↔ projection consistency ---
+  if(proj.done){
+    if(!proj.ok)
+      problems.push('<b>Guide/projection mismatch.</b> The live capture reticle and the composite assembly are not using identical maths — frames will not land where the guide showed. This is a code-level bug; report it.');
+    else
+      notes.push('Guide and composite projection verified identical — what the reticle shows during capture is exactly where the frame is placed.');
+    if(!proj.portrait)
+      notes.push('This device is currently in landscape. The app is portrait-only — hold the phone upright.');
+  }
+
+  if(!cam.env && !cam.res)
+    problems.push('Camera could not be opened. Check Chrome camera permission for this site.');
+  else if(!cam.env && cam.res)
+    notes.push('Rear camera by <code>facingMode:environment</code> failed but a fallback camera opened — the app may show the front camera. Worth checking which camera appears.');
+
+  if(cam.count > 1)
+    notes.push('This phone has <b>' + cam.count + ' cameras</b>. Different browsers pick different lenses for <code>facingMode:environment</code> — that\'s why Chrome and Firefox disagreed. In the main app use <b>Camera → Detect</b> to lock one lens and set its FOV preset.');
+
+  let html = '<h3>Diagnosis</h3>';
+  if(problems.length === 0){
+    html += '<p style="color:var(--green)">No blocking problems found. If the overlay still springs, confirm you\'re running the latest build (look-vector tracking) and pick <b>Gyro</b> mode.</p>';
+  } else {
+    html += '<p style="color:var(--red)">Found ' + problems.length + ' issue' + (problems.length>1?'s':'') + ':</p><ul>';
+    problems.forEach(p => html += '<li>' + p + '</li>');
+    html += '</ul>';
+  }
+  if(notes.length){
+    html += '<p style="color:var(--dim);margin-top:8px;">Notes:</p><ul>';
+    notes.forEach(n => html += '<li>' + n + '</li>');
+    html += '</ul>';
+  }
+  html += '<p style="color:var(--dim);margin-top:8px;font-size:10px;">' +
+          'Copy the diagnostic log below and send it over for a closer look.</p>';
+  v.innerHTML = html;
+  v.style.display = 'block';
+  v.scrollIntoView({ behavior:'smooth', block:'start' });
+  $('run-all').disabled = false;
+}
+
+log('ready — tap "Run everything & diagnose"');
+})();
+</script>
+</body>
+</html>
